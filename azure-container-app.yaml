@@ -1,0 +1,72 @@
+# Azure Container Apps resource template (replace <PLACEHOLDER> values before applying)
+type: Microsoft.App/containerApps
+properties:
+  managedEnvironmentId: <MANAGED_ENVIRONMENT_ID>
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8501
+      transport: Auto
+      allowInsecure: false
+    registries:
+      - server: <ACR_NAME>.azurecr.io
+        identity: system
+    secrets:
+      - name: groq-api-key
+        keyVaultUrl: https://<KEY_VAULT_NAME>.vault.azure.net/secrets/GROQ-API-KEY
+        identity: system
+      - name: tavily-api-key
+        keyVaultUrl: https://<KEY_VAULT_NAME>.vault.azure.net/secrets/TAVILY-API-KEY
+        identity: system
+  template:
+    containers:
+      - name: ai-rag-chatbot
+        image: <ACR_NAME>.azurecr.io/ai-rag-chatbot:latest
+        resources:
+          cpu: 1.0
+          memory: 2.0Gi
+        env:
+          - name: PORT
+            value: "8501"
+          - name: LLM_PROVIDER
+            value: "groq"
+          - name: LLM_MODEL
+            value: "openai/gpt-oss-120b"
+          - name: ALLOW_PROVIDER_SWITCH
+            value: "false"
+          - name: CHROMA_DB_DIR
+            value: "/app/data/chroma_db"
+          - name: LLM_LOG_PATH
+            value: "/app/data/llm_calls.jsonl"
+          - name: ENABLE_FILE_LOGGING
+            value: "true"
+          - name: LOG_REDACT_CONTENT
+            value: "true"
+          - name: GROQ_API_KEY
+            secretRef: groq-api-key
+          - name: TAVILY_API_KEY
+            secretRef: tavily-api-key
+        volumeMounts:
+          - volumeName: rag-data
+            mountPath: /app/data
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          - type: Readiness
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 10
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
+    volumes:
+      - name: rag-data
+        storageName: <AZURE_FILES_STORAGE_NAME>
+        storageType: AzureFile
